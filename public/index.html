@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp Bot</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script>
         async function checkConnection() {
             const response = await fetch('/status');
@@ -13,13 +12,8 @@
 
             if (data.connected) {
                 container.innerHTML = `
-                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative">
-                        <strong class="font-bold">Bot Terhubung!</strong>
-                        <p class="text-sm">WhatsApp bot telah aktif dan siap digunakan.</p>
-                    </div>
-                    <button onclick="logout()" class="mt-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow hover:bg-red-600 transition">
-                        Disconnect
-                    </button>
+                    <h2>Bot Terhubung!</h2>
+                    <button onclick="logout()">Disconnect</button>
                 `;
             } else {
                 getQRCode();
@@ -32,13 +26,7 @@
             const container = document.getElementById('container');
 
             if (!data.status) {
-                container.innerHTML = `
-                    <div class="text-center">
-                        <h2 class="text-lg font-semibold mb-2">Scan QR Code untuk Login</h2>
-                        <img src="${data.qr}" alt="QR Code" class="mx-auto border-2 border-gray-300 rounded-lg shadow-lg">
-                        <p class="text-sm text-gray-600 mt-2">QR akan diperbarui secara otomatis.</p>
-                    </div>
-                `;
+                container.innerHTML = `<img src="${data.qr}" alt="QR Code">`;
                 setTimeout(getQRCode, 5000); // Cek ulang QR setiap 5 detik
             } else {
                 checkConnection();
@@ -54,51 +42,9 @@
         window.onload = checkConnection;
     </script>
 </head>
-<body class="bg-gray-100 flex items-center justify-center h-screen">
-    <div class="bg-white p-6 rounded-lg shadow-lg text-center w-96">
-        <div class="flex justify-center mb-4">
-            <button onclick="openTab('bot')" class="tab-btn bg-blue-500 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-600 transition mx-2">
-                WhatsApp Bot
-            </button>
-            <button onclick="openTab('docs')" class="tab-btn bg-gray-300 text-black px-4 py-2 rounded-lg shadow hover:bg-gray-400 transition mx-2">
-                Dokumentasi
-            </button>
-        </div>
-
-        <div id="bot-tab" class="tab-content">
-            <div id="container">
-                <h2 class="text-lg font-semibold">Loading...</h2>
-            </div>
-        </div>
-
-        <div id="docs-tab" class="tab-content hidden text-left">
-            <h2 class="text-lg font-semibold mb-2">📖 Dokumentasi API</h2>
-            <p class="text-sm text-gray-700"><strong>1️⃣ Get QR Code:</strong>  
-                <code class="bg-gray-200 px-2 py-1 rounded">GET /get-qr</code>
-            </p>
-            <p class="text-sm text-gray-700"><strong>2️⃣ Cek Status:</strong>  
-                <code class="bg-gray-200 px-2 py-1 rounded">GET /status</code>
-            </p>
-            <p class="text-sm text-gray-700"><strong>3️⃣ Logout:</strong>  
-                <code class="bg-gray-200 px-2 py-1 rounded">GET /logout</code>
-            </p>
-            <p class="text-sm text-gray-700"><strong>4️⃣ Kirim Pesan:</strong>  
-                <code class="bg-gray-200 px-2 py-1 rounded">POST /send-message</code>  
-                <span class="text-xs">Body: { "number": "628123456789", "message": "Halo!" }</span>
-            </p>
-            <p class="text-sm text-gray-700"><strong>5️⃣ Kirim Gambar/Dokumen:</strong>  
-                <code class="bg-gray-200 px-2 py-1 rounded">POST /send-media</code>  
-                <span class="text-xs">Body: { "number": "628123456789", "message": "Halo!", "file": "https://link-gambar.jpg" }</span>
-            </p>
-        </div>
+<body>
+    <div id="container">
+        <h2>Loading...</h2>
     </div>
-
-    <script>
-        function openTab(tab) {
-            document.getElementById('bot-tab').classList.add('hidden');
-            document.getElementById('docs-tab').classList.add('hidden');
-            document.getElementById(tab + '-tab').classList.remove('hidden');
-        }
-    </script>
 </body>
 </html>
