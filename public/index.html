@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp Bot</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script>
         async function checkConnection() {
             const response = await fetch('/status');
@@ -13,12 +12,8 @@
 
             if (data.connected) {
                 container.innerHTML = `
-                    <div class="text-center space-y-4 bg-green-100 p-6 rounded-lg shadow-md">
-                        <h2 class="text-2xl font-bold text-green-700">Bot Terhubung!</h2>
-                        <button onclick="logout()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md">
-                            Disconnect
-                        </button>
-                    </div>
+                    <h2>Bot Terhubung!</h2>
+                    <button onclick="logout()">Disconnect</button>
                 `;
             } else {
                 getQRCode();
@@ -31,12 +26,7 @@
             const container = document.getElementById('container');
 
             if (!data.status) {
-                container.innerHTML = `
-                    <div class="flex flex-col items-center bg-gray-100 p-6 rounded-lg shadow-md space-y-4">
-                        <h2 class="text-lg font-semibold">Scan QR Code untuk Terhubung</h2>
-                        <img src="${data.qr}" alt="QR Code" class="w-48 h-48 border rounded-lg shadow">
-                    </div>
-                `;
+                container.innerHTML = `<img src="${data.qr}" alt="QR Code">`;
                 setTimeout(getQRCode, 5000); // Cek ulang QR setiap 5 detik
             } else {
                 checkConnection();
@@ -52,9 +42,9 @@
         window.onload = checkConnection;
     </script>
 </head>
-<body class="flex items-center justify-center h-screen bg-gray-50">
-    <div id="container" class="p-6 bg-white rounded-lg shadow-md text-center">
-        <h2 class="text-lg font-semibold">Loading...</h2>
+<body>
+    <div id="container">
+        <h2>Loading...</h2>
     </div>
 </body>
 </html>
