@@ -69,22 +69,31 @@ app.get('/logout', async (req, res) => {
     }
 });
 
-// API untuk mengirim pesan WhatsApp
 app.post('/send-message', async (req, res) => {
-    const { number, message } = req.body;
+    const { number, message, mediaUrl } = req.body;
 
-    if (!number || !message) {
-        return res.status(400).json({ status: false, message: 'Nomor dan pesan harus diisi!' });
+    if (!number || (!message && !mediaUrl)) {
+        return res.status(400).json({ status: false, message: 'Nomor dan minimal salah satu (pesan atau media) harus diisi!' });
     }
 
     try {
         const formattedNumber = number.includes('@c.us') ? number : `${number}@c.us`; // Format nomor WA
-        await client.sendMessage(formattedNumber, message);
+
+        if (mediaUrl) {
+            // Kirim pesan dengan media (gambar/dokumen)
+            const media = await MessageMedia.fromUrl(mediaUrl);
+            await client.sendMessage(formattedNumber, media, { caption: message || '' });
+        } else {
+            // Kirim pesan teks saja
+            await client.sendMessage(formattedNumber, message);
+        }
+
         res.json({ status: true, message: 'Pesan berhasil dikirim!' });
     } catch (error) {
         res.status(500).json({ status: false, message: 'Gagal mengirim pesan', error: error.message });
     }
 });
+
 
 // Jalankan server Express
 const PORT = 3000;
