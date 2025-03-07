@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bot</title>
+    <script>
+        async function checkConnection() {
+            const response = await fetch('/status');
+            const data = await response.json();
+            const container = document.getElementById('container');
+
+            if (data.connected) {
+                container.innerHTML = `
+                    <h2>Bot Terhubung!</h2>
+                    <button onclick="logout()">Disconnect</button>
+                `;
+            } else {
+                getQRCode();
+            }
+        }
+
+        async function getQRCode() {
+            const response = await fetch('/get-qr');
+            const data = await response.json();
+            const container = document.getElementById('container');
+
+            if (!data.status) {
+                container.innerHTML = `<img src="${data.qr}" alt="QR Code">`;
+                setTimeout(getQRCode, 5000); // Cek ulang QR setiap 5 detik
+            } else {
+                checkConnection();
+            }
+        }
+
+        async function logout() {
+            await fetch('/logout');
+            alert("Berhasil Logout!");
+            location.reload();
+        }
+
+        window.onload = checkConnection;
+    </script>
+</head>
+<body>
+    <div id="container">
+        <h2>Loading...</h2>
+    </div>
+</body>
+</html>
