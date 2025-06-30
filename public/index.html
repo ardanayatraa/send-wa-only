@@ -1,50 +1,318 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Bot</title>
-    <script>
-        async function checkConnection() {
-            const response = await fetch('/status');
-            const data = await response.json();
-            const container = document.getElementById('container');
-
-            if (data.connected) {
-                container.innerHTML = `
-                    <h2>Bot Terhubung!</h2>
-                    <button onclick="logout()">Disconnect</button>
-                `;
-            } else {
-                getQRCode();
-            }
-        }
-
-        async function getQRCode() {
-            const response = await fetch('/get-qr');
-            const data = await response.json();
-            const container = document.getElementById('container');
-
-            if (!data.status) {
-                container.innerHTML = `<img src="${data.qr}" alt="QR Code">`;
-                setTimeout(getQRCode, 5000); // Cek ulang QR setiap 5 detik
-            } else {
-                checkConnection();
-            }
-        }
-
-        async function logout() {
-            await fetch('/logout');
-            alert("Berhasil Logout!");
-            location.reload();
-        }
-
-        window.onload = checkConnection;
-    </script>
+    <title>WhatsApp Multi-User Bot - Advanced</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="container">
-        <h2>Loading...</h2>
+    <div class="app">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="nav-brand">
+                    <i class="fab fa-whatsapp"></i>
+                    <span>WhatsApp Bot Pro</span>
+                </div>
+                <div class="nav-menu">
+                    <a href="#dashboard" class="nav-link active" data-section="dashboard">
+                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                    </a>
+                    <a href="#sessions" class="nav-link" data-section="sessions">
+                        <i class="fas fa-users"></i> Sessions
+                    </a>
+                    <a href="#messages" class="nav-link" data-section="messages">
+                        <i class="fas fa-comments"></i> Messages
+                    </a>
+                    <a href="#history" class="nav-link" data-section="history">
+                        <i class="fas fa-history"></i> History
+                    </a>
+                    <a href="/api-docs" target="_blank" class="nav-link">
+                        <i class="fas fa-book"></i> API Docs
+                    </a>
+                </div>
+                <div class="nav-user">
+                    <div class="user-info">
+                        <span id="activeUser">No Active Session</span>
+                        <button id="logoutBtn" class="btn btn-danger btn-sm" style="display: none;">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="section active">
+                <div class="section-header">
+                    <h1><i class="fas fa-tachometer-alt"></i> Dashboard</h1>
+                    <p>Manage your WhatsApp bot sessions and monitor activity</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="totalSessions">0</h3>
+                            <p>Active Sessions</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-paper-plane"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="totalMessages">0</h3>
+                            <p>Messages Sent</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="uptime">0h 0m</h3>
+                            <p>Uptime</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-heartbeat"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3 id="systemStatus">Healthy</h3>
+                            <p>System Status</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-plus-circle"></i> Quick Start</h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Create a new WhatsApp session to get started</p>
+                            <div class="form-group">
+                                <label for="quickUserId">User ID</label>
+                                <input type="text" id="quickUserId" placeholder="Enter unique user ID">
+                            </div>
+                            <button id="quickCreateBtn" class="btn btn-primary">
+                                <i class="fas fa-rocket"></i> Create Session
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-list"></i> Recent Activity</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="recentActivity" class="activity-list">
+                                <div class="activity-item">
+                                    <i class="fas fa-info-circle"></i>
+                                    <span>System started</span>
+                                    <small>Just now</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sessions Section -->
+            <section id="sessions" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-users"></i> Session Management</h1>
+                    <p>Create and manage WhatsApp bot sessions</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-plus"></i> Create New Session</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sessionUserId">User ID</label>
+                                <input type="text" id="sessionUserId" placeholder="Enter unique user ID">
+                            </div>
+                            <button id="createSessionBtn" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Create Session
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QR Code Display -->
+                <div id="qrSection" class="card" style="display: none;">
+                    <div class="card-header">
+                        <h3><i class="fas fa-qrcode"></i> WhatsApp Authentication</h3>
+                    </div>
+                    <div class="card-body text-center">
+                        <div id="qrContainer">
+                            <div class="loading-spinner">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <p>Generating QR Code...</p>
+                            </div>
+                        </div>
+                        <p class="qr-instruction">Scan this QR code with your WhatsApp mobile app</p>
+                        <div class="qr-status">
+                            <span class="status-indicator" id="qrStatus">Waiting for scan...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Sessions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-list"></i> Active Sessions</h3>
+                        <button id="refreshSessions" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="sessionsList" class="sessions-list">
+                            <div class="empty-state">
+                                <i class="fas fa-users"></i>
+                                <p>No active sessions</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Messages Section -->
+            <section id="messages" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-comments"></i> Send Messages</h1>
+                    <p>Send text messages and media files via WhatsApp</p>
+                </div>
+
+                <div id="messageInterface" class="card" style="display: none;">
+                    <div class="card-header">
+                        <h3><i class="fas fa-paper-plane"></i> Compose Message</h3>
+                        <div class="session-indicator">
+                            <i class="fas fa-circle connected"></i>
+                            <span id="currentSessionId">Session Active</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="messageForm">
+                            <div class="form-group">
+                                <label for="phoneNumber">
+                                    <i class="fas fa-phone"></i> WhatsApp Number
+                                </label>
+                                <input type="tel" id="phoneNumber" placeholder="e.g., 628123456789" required>
+                                <small>Include country code without + symbol</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="messageText">
+                                    <i class="fas fa-message"></i> Message
+                                </label>
+                                <textarea id="messageText" rows="4" placeholder="Type your message here..."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="mediaFile">
+                                    <i class="fas fa-paperclip"></i> Attachment (Optional)
+                                </label>
+                                <div class="file-upload-area" id="fileUploadArea">
+                                    <input type="file" id="mediaFile" accept="image/*,video/*,audio/*,.pdf,.doc,.docx">
+                                    <div class="upload-placeholder">
+                                        <i class="fas fa-cloud-upload-alt"></i>
+                                        <p>Click to select file or drag & drop</p>
+                                        <small>Max size: 50MB</small>
+                                    </div>
+                                    <div id="filePreview" class="file-preview" style="display: none;">
+                                        <div class="file-info">
+                                            <i class="fas fa-file"></i>
+                                            <span id="fileName"></span>
+                                            <button type="button" id="removeFile" class="btn-remove">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fas fa-paper-plane"></i> Send Message
+                                </button>
+                                <button type="button" id="clearMessage" class="btn btn-secondary">
+                                    <i class="fas fa-eraser"></i> Clear
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="noSessionMessage" class="card">
+                    <div class="card-body text-center">
+                        <div class="empty-state">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <h3>No Active Session</h3>
+                            <p>Please create and connect a WhatsApp session first</p>
+                            <button class="btn btn-primary" onclick="showSection('sessions')">
+                                <i class="fas fa-plus"></i> Create Session
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- History Section -->
+            <section id="history" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-history"></i> Message History</h1>
+                    <p>View sent and received messages</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-list"></i> Recent Messages</h3>
+                        <div class="header-actions">
+                            <select id="historySession" class="form-select">
+                                <option value="">Select Session</option>
+                            </select>
+                            <button id="refreshHistory" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="messageHistory" class="message-history">
+                            <div class="empty-state">
+                                <i class="fas fa-comments"></i>
+                                <p>No messages found</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <p>Processing...</p>
+            </div>
+        </div>
+
+        <!-- Toast Container -->
+        <div id="toastContainer" class="toast-container"></div>
     </div>
+
+    <script src="app.js"></script>
 </body>
 </html>
