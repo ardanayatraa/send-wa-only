@@ -663,8 +663,14 @@ async function sendWhatsAppMedia(client, userId, number, media, caption = "") {
  *               type: string
  */
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"))
+  try {
+    res.sendFile(path.resolve("public/index.html"))
+  } catch (error) {
+    console.error("Failed to serve index.html:", error)
+    res.status(500).send("Failed to load index.html")
+  }
 })
+
 
 /**
  * @swagger
