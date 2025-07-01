@@ -12,11 +12,13 @@ const app = express()
 
 // Middleware
 app.use(express.json())
-app.use(cors({
-  origin: 'https://wa.noonight.online',
-  methods: ['GET', 'POST', 'DELETE'],
-  credentials: true
-}))
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "https://wa.noonight.online"],
+    methods: ["GET", "POST", "DELETE"],
+    credentials: true,
+  }),
+)
 
 app.use(express.static("public"))
 
@@ -31,12 +33,13 @@ const swaggerOptions = {
         Advanced WhatsApp Bot API with multi-user support, file sharing, and session management.
         
         ## Features
-        - Multi-user session management
+        - Multi-user session management (1 person = 1 account)
         - QR code authentication
         - Text and media message sending
         - Message history tracking
         - Real-time connection status
         - File upload support (images, documents, audio, video)
+        - Session isolation (users cannot access other sessions)
         
         ## Getting Started
         1. Create a session with POST /api/sessions
@@ -59,14 +62,14 @@ const swaggerOptions = {
         description: "Development server",
       },
       {
-        url: "https://your-domain.com",
+        url: "https://wa.noonight.online",
         description: "Production server",
       },
     ],
     tags: [
       {
         name: "Sessions",
-        description: "WhatsApp session management",
+        description: "WhatsApp session management - 1 person 1 account",
       },
       {
         name: "Messages",
@@ -110,7 +113,7 @@ const swaggerOptions = {
           properties: {
             userId: {
               type: "string",
-              description: "Unique identifier for the user",
+              description: "Unique identifier for the user (only one session per user allowed)",
               example: "user123",
               minLength: 1,
               maxLength: 50,
@@ -156,136 +159,10 @@ const swaggerOptions = {
             },
           },
         },
-        QRResponse: {
-          type: "object",
-          properties: {
-            status: {
-              type: "boolean",
-            },
-            connected: {
-              type: "boolean",
-              description: "Whether WhatsApp is connected",
-            },
-            qr: {
-              type: "string",
-              description: "Base64 encoded QR code image (data URL)",
-              example: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
-            },
-            message: {
-              type: "string",
-              description: "Status message",
-            },
-          },
-        },
-        MessageHistory: {
-          type: "object",
-          properties: {
-            type: {
-              type: "string",
-              enum: ["sent", "received"],
-              description: "Message direction",
-            },
-            to: {
-              type: "string",
-              description: "Recipient number (for sent messages)",
-            },
-            from: {
-              type: "string",
-              description: "Sender number (for received messages)",
-            },
-            body: {
-              type: "string",
-              description: "Message content",
-            },
-            hasMedia: {
-              type: "boolean",
-              description: "Whether message contains media",
-            },
-            timestamp: {
-              type: "string",
-              format: "date-time",
-              description: "Message timestamp",
-            },
-            status: {
-              type: "string",
-              enum: ["sending", "sent", "failed"],
-              description: "Message status",
-            },
-          },
-        },
-        HealthResponse: {
-          type: "object",
-          properties: {
-            status: {
-              type: "string",
-              example: "healthy",
-            },
-            timestamp: {
-              type: "string",
-              format: "date-time",
-            },
-            activeSessions: {
-              type: "integer",
-              description: "Number of active sessions",
-            },
-            uptime: {
-              type: "number",
-              description: "Server uptime in seconds",
-            },
-            pendingMessages: {
-              type: "integer",
-              description: "Number of pending messages",
-            },
-          },
-        },
-      },
-      responses: {
-        BadRequest: {
-          description: "Bad request",
-          content: {
-            "application/json": {
-              schema: {
-                $ref: "#/components/schemas/ApiResponse",
-              },
-              example: {
-                status: false,
-                message: "Invalid request data",
-              },
-            },
-          },
-        },
-        NotFound: {
-          description: "Resource not found",
-          content: {
-            "application/json": {
-              schema: {
-                $ref: "#/components/schemas/ApiResponse",
-              },
-              example: {
-                status: false,
-                message: "Session not found",
-              },
-            },
-          },
-        },
-        InternalError: {
-          description: "Internal server error",
-          content: {
-            "application/json": {
-              schema: {
-                $ref: "#/components/schemas/ApiResponse",
-              },
-              example: {
-                status: false,
-                message: "Internal server error",
-              },
-            },
-          },
-        },
       },
     },
   },
-  apis: ["./server.js"], // Make sure this path is correct
+  apis: ["./server.js"],
 }
 
 const specs = swaggerJsdoc(swaggerOptions)
@@ -350,10 +227,6 @@ const upload = multer({
       "application/pdf",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-powerpoint",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "text/plain",
       "text/csv",
       "audio/mpeg",
@@ -380,10 +253,6 @@ const upload = multer({
       ".pdf",
       ".doc",
       ".docx",
-      ".xls",
-      ".xlsx",
-      ".ppt",
-      ".pptx",
       ".txt",
       ".csv",
       ".mp3",
@@ -417,17 +286,17 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 })
 
-// Storage for clients and sessions
-const clients = new Map()
-const userSessions = new Map()
-const qrCodes = new Map()
-const messageHistory = new Map()
-const pendingMessages = new Map() // Track pending messages
+// Storage for clients and sessions - ISOLATED PER USER
+const clients = new Map() // userId -> WhatsApp Client
+const userSessions = new Map() // userId -> Session Data
+const qrCodes = new Map() // userId -> QR Code
+const messageHistory = new Map() // userId -> Message History Array
+const pendingMessages = new Map() // messageKey -> Pending Message Data
 
 // Utility functions
 function createWhatsAppClient(userId) {
   const client = new Client({
-    authStrategy: new LocalAuth({ clientId: userId }),
+    authStrategy: new LocalAuth({ clientId: userId }), // Each user gets isolated auth
     puppeteer: {
       args: [
         "--no-sandbox",
@@ -454,6 +323,8 @@ function createWhatsAppClient(userId) {
       session.qrCode = qrCodeData
       session.lastActivity = new Date()
       userSessions.set(userId, session)
+
+      console.log(`📱 QR Code generated for user: ${userId}`)
     } catch (error) {
       console.error(`QR generation error for ${userId}:`, error)
     }
@@ -479,6 +350,7 @@ function createWhatsAppClient(userId) {
   })
 
   client.on("message", async (message) => {
+    // Only store messages for the specific user
     const history = messageHistory.get(userId) || []
     history.push({
       type: "received",
@@ -487,15 +359,14 @@ function createWhatsAppClient(userId) {
       timestamp: new Date(),
       hasMedia: message.hasMedia,
     })
-    messageHistory.set(userId, history.slice(-100))
+    messageHistory.set(userId, history.slice(-100)) // Keep last 100 messages per user
   })
 
-  // Track message sending events
   client.on("message_create", (message) => {
     if (message.fromMe) {
       console.log(`✅ Message sent successfully by ${userId} to ${message.to}`)
 
-      // Update pending message status
+      // Update pending message status for this specific user
       const messageKey = `${userId}-${message.to}-${Date.now()}`
       const pending = pendingMessages.get(messageKey)
       if (pending) {
@@ -519,22 +390,22 @@ function formatPhoneNumber(number) {
   return cleaned.includes("@c.us") ? number : `${cleaned}@c.us`
 }
 
-// Enhanced message sending with better tracking
+// Enhanced message sending with user isolation
 async function sendWhatsAppMessage(client, userId, number, message) {
   const messageKey = `${userId}-${number}-${Date.now()}`
 
   try {
     console.log(`📤 Attempting to send message from ${userId} to ${number}`)
 
-    // Track pending message
+    // Track pending message for this specific user
     pendingMessages.set(messageKey, {
       status: "pending",
       timestamp: new Date(),
       to: number,
       content: message,
+      userId: userId, // Track which user sent this
     })
 
-    // Check client state
     const state = await client.getState()
     console.log(`Client ${userId} state:`, state)
 
@@ -542,14 +413,12 @@ async function sendWhatsAppMessage(client, userId, number, message) {
       throw new Error(`WhatsApp client not ready. Current state: ${state}`)
     }
 
-    // Send message with timeout
     const sendPromise = client.sendMessage(number, message)
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error("Message sending timeout after 30 seconds")), 30000)
     })
 
     const result = await Promise.race([sendPromise, timeoutPromise])
-
     console.log(`✅ Message sent successfully from ${userId} to ${number}`)
 
     // Update pending status
@@ -564,7 +433,6 @@ async function sendWhatsAppMessage(client, userId, number, message) {
   } catch (error) {
     console.error(`❌ Send message error for ${userId}:`, error.message)
 
-    // Update pending status
     const pending = pendingMessages.get(messageKey)
     if (pending) {
       pending.status = "failed"
@@ -584,41 +452,35 @@ async function sendWhatsAppMessage(client, userId, number, message) {
   }
 }
 
-// Enhanced media sending
+// Enhanced media sending with user isolation
 async function sendWhatsAppMedia(client, userId, number, media, caption = "") {
   const messageKey = `${userId}-${number}-${Date.now()}`
 
   try {
     console.log(`📤 Attempting to send media from ${userId} to ${number}`)
 
-    // Track pending message
     pendingMessages.set(messageKey, {
       status: "pending",
       timestamp: new Date(),
       to: number,
       hasMedia: true,
       caption: caption,
+      userId: userId,
     })
 
-    // Check client state
     const state = await client.getState()
-    console.log(`Client ${userId} state:`, state)
-
     if (state !== "CONNECTED") {
       throw new Error(`WhatsApp client not ready. Current state: ${state}`)
     }
 
-    // Send media with timeout
     const sendPromise = client.sendMessage(number, media, { caption })
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error("Media sending timeout after 60 seconds")), 60000)
     })
 
     const result = await Promise.race([sendPromise, timeoutPromise])
-
     console.log(`✅ Media sent successfully from ${userId} to ${number}`)
 
-    // Update pending status
     const pending = pendingMessages.get(messageKey)
     if (pending) {
       pending.status = "sent"
@@ -630,7 +492,6 @@ async function sendWhatsAppMedia(client, userId, number, media, caption = "") {
   } catch (error) {
     console.error(`❌ Send media error for ${userId}:`, error.message)
 
-    // Update pending status
     const pending = pendingMessages.get(messageKey)
     if (pending) {
       pending.status = "failed"
@@ -640,7 +501,6 @@ async function sendWhatsAppMedia(client, userId, number, media, caption = "") {
 
     throw error
   } finally {
-    // Clean up pending message after 5 minutes
     setTimeout(
       () => {
         pendingMessages.delete(messageKey)
@@ -662,10 +522,6 @@ async function sendWhatsAppMedia(client, userId, number, media, caption = "") {
  *     responses:
  *       200:
  *         description: HTML page served successfully
- *         content:
- *           text/html:
- *             schema:
- *               type: string
  */
 app.get("/", (req, res) => {
   try {
@@ -676,15 +532,14 @@ app.get("/", (req, res) => {
   }
 })
 
-
 /**
  * @swagger
  * /api/sessions:
  *   post:
- *     summary: Create a new WhatsApp session
+ *     summary: Create a new WhatsApp session (1 person = 1 account)
  *     description: |
  *       Creates a new WhatsApp client session for a user. Each user can have only one active session.
- *       After creating a session, use the QR endpoint to get the authentication QR code.
+ *       This ensures session isolation - users cannot access other users' sessions.
  *     tags: [Sessions]
  *     requestBody:
  *       required: true
@@ -692,61 +547,13 @@ app.get("/", (req, res) => {
  *         application/json:
  *           schema:
  *             $ref: '#/components/schemas/CreateSessionRequest'
- *           examples:
- *             basic:
- *               summary: Basic session creation
- *               value:
- *                 userId: "user123"
  *     responses:
  *       200:
  *         description: Session created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ApiResponse'
- *             examples:
- *               success:
- *                 summary: Successful creation
- *                 value:
- *                   status: true
- *                   message: "Session created successfully"
- *                   data:
- *                     userId: "user123"
- *       400:
- *         $ref: '#/components/responses/BadRequest'
  *       409:
- *         description: Session already exists
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ApiResponse'
- *             example:
- *               status: false
- *               message: "Session already exists for this user"
- *       500:
- *         $ref: '#/components/responses/InternalError'
- *   get:
- *     summary: Get all active sessions
- *     description: Retrieve a list of all active WhatsApp sessions
- *     tags: [Sessions]
- *     responses:
- *       200:
- *         description: List of all sessions
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 sessions:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Session'
- *             example:
- *               sessions:
- *                 - userId: "user123"
- *                   connected: true
- *                   createdAt: "2024-01-01T10:00:00Z"
- *                   lastActivity: "2024-01-01T10:30:00Z"
+ *         description: Session already exists for this user
+ *       400:
+ *         description: Invalid user ID
  */
 app.post("/api/sessions", async (req, res) => {
   try {
@@ -761,17 +568,20 @@ app.post("/api/sessions", async (req, res) => {
 
     const cleanUserId = userId.trim()
 
+    // Check if session already exists - ENFORCE 1 PERSON = 1 ACCOUNT
     if (clients.has(cleanUserId)) {
       return res.status(409).json({
         status: false,
-        message: "Session already exists for this user",
+        message: "Session already exists for this user. Only one session per person is allowed.",
         data: { userId: cleanUserId },
       })
     }
 
+    // Create isolated client for this user
     const client = createWhatsAppClient(cleanUserId)
     clients.set(cleanUserId, client)
 
+    // Initialize user-specific data
     userSessions.set(cleanUserId, {
       connected: false,
       qrCode: null,
@@ -783,9 +593,11 @@ app.post("/api/sessions", async (req, res) => {
 
     await client.initialize()
 
+    console.log(`🆕 New session created for user: ${cleanUserId}`)
+
     res.json({
       status: true,
-      message: "Session created successfully",
+      message: "Session created successfully. Only you can access this session.",
       data: { userId: cleanUserId },
     })
   } catch (error) {
@@ -798,6 +610,14 @@ app.post("/api/sessions", async (req, res) => {
   }
 })
 
+/**
+ * @swagger
+ * /api/sessions:
+ *   get:
+ *     summary: Get all active sessions (admin view)
+ *     description: Retrieve a list of all active WhatsApp sessions
+ *     tags: [Sessions]
+ */
 app.get("/api/sessions", (req, res) => {
   const sessions = Array.from(userSessions.entries()).map(([userId, session]) => ({
     userId,
@@ -806,7 +626,10 @@ app.get("/api/sessions", (req, res) => {
     lastActivity: session.lastActivity,
   }))
 
-  res.json({ sessions })
+  res.json({
+    sessions,
+    note: "Each user has isolated session access - 1 person = 1 account",
+  })
 })
 
 /**
@@ -814,9 +637,7 @@ app.get("/api/sessions", (req, res) => {
  * /api/sessions/{userId}/qr:
  *   get:
  *     summary: Get QR code for WhatsApp authentication
- *     description: |
- *       Get the QR code for WhatsApp Web authentication.
- *       Scan this QR code with your WhatsApp mobile app to connect the session.
+ *     description: Get the QR code for WhatsApp Web authentication. Only the session owner can access this.
  *     tags: [Sessions]
  *     parameters:
  *       - in: path
@@ -824,35 +645,7 @@ app.get("/api/sessions", (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: User ID of the session
- *         example: "user123"
- *     responses:
- *       200:
- *         description: QR code or connection status
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/QRResponse'
- *             examples:
- *               qr_available:
- *                 summary: QR code available
- *                 value:
- *                   status: false
- *                   connected: false
- *                   qr: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
- *               already_connected:
- *                 summary: Already connected
- *                 value:
- *                   status: true
- *                   connected: true
- *               qr_not_ready:
- *                 summary: QR not ready yet
- *                 value:
- *                   status: false
- *                   connected: false
- *                   message: "QR code not ready yet"
- *       404:
- *         $ref: '#/components/responses/NotFound'
+ *         description: User ID of the session (only accessible by session owner)
  */
 app.get("/api/sessions/:userId/qr", (req, res) => {
   const { userId } = req.params
@@ -861,7 +654,7 @@ app.get("/api/sessions/:userId/qr", (req, res) => {
   if (!session) {
     return res.status(404).json({
       status: false,
-      message: "Session not found",
+      message: "Session not found. Make sure you're accessing your own session.",
     })
   }
 
@@ -869,18 +662,20 @@ app.get("/api/sessions/:userId/qr", (req, res) => {
     res.json({
       status: true,
       connected: true,
+      message: "WhatsApp is already connected for this user.",
     })
   } else if (session.qrCode) {
     res.json({
       status: false,
       connected: false,
       qr: session.qrCode,
+      message: "Scan this QR code with your WhatsApp mobile app.",
     })
   } else {
     res.json({
       status: false,
       connected: false,
-      message: "QR code not ready yet",
+      message: "QR code not ready yet. Please wait...",
     })
   }
 })
@@ -890,41 +685,8 @@ app.get("/api/sessions/:userId/qr", (req, res) => {
  * /api/sessions/{userId}/status:
  *   get:
  *     summary: Check session connection status
- *     description: Get the current connection status and activity information for a session
+ *     description: Get the current connection status for your session only
  *     tags: [Sessions]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID of the session
- *         example: "user123"
- *     responses:
- *       200:
- *         description: Session status information
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 connected:
- *                   type: boolean
- *                   description: Whether the session is connected to WhatsApp
- *                 lastActivity:
- *                   type: string
- *                   format: date-time
- *                   description: Last activity timestamp
- *                 createdAt:
- *                   type: string
- *                   format: date-time
- *                   description: Session creation timestamp
- *             example:
- *               connected: true
- *               lastActivity: "2024-01-01T10:30:00Z"
- *               createdAt: "2024-01-01T10:00:00Z"
- *       404:
- *         $ref: '#/components/responses/NotFound'
  */
 app.get("/api/sessions/:userId/status", async (req, res) => {
   const { userId } = req.params
@@ -934,7 +696,7 @@ app.get("/api/sessions/:userId/status", async (req, res) => {
   if (!session) {
     return res.status(404).json({
       connected: false,
-      message: "Session not found",
+      message: "Session not found. Make sure you're accessing your own session.",
     })
   }
 
@@ -964,60 +726,9 @@ app.get("/api/sessions/:userId/status", async (req, res) => {
  * @swagger
  * /api/sessions/{userId}/messages:
  *   post:
- *     summary: Send a text message
- *     description: |
- *       Send a text message to a WhatsApp number. The session must be connected before sending messages.
- *       Messages are processed asynchronously for better performance.
+ *     summary: Send a text message (user-isolated)
+ *     description: Send a text message from your WhatsApp session only
  *     tags: [Messages]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID of the session
- *         example: "user123"
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/MessageRequest'
- *           examples:
- *             simple_message:
- *               summary: Simple text message
- *               value:
- *                 number: "628123456789"
- *                 message: "Hello! This is a test message from WhatsApp Bot."
- *             long_message:
- *               summary: Longer message
- *               value:
- *                 number: "628123456789"
- *                 message: "This is a longer message to demonstrate the API capabilities. You can send messages up to 4096 characters long."
- *     responses:
- *       200:
- *         description: Message sent successfully (or being sent)
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ApiResponse'
- *             examples:
- *               success:
- *                 summary: Message being sent
- *                 value:
- *                   status: true
- *                   message: "Message is being sent..."
- *                   data:
- *                     to: "628123456789@c.us"
- *                     content: "Hello! This is a test message."
- *                     timestamp: "2024-01-01T10:30:00Z"
- *                     sending: true
- *       400:
- *         $ref: '#/components/responses/BadRequest'
- *       404:
- *         $ref: '#/components/responses/NotFound'
- *       500:
- *         $ref: '#/components/responses/InternalError'
  */
 app.post("/api/sessions/:userId/messages", async (req, res) => {
   try {
@@ -1025,10 +736,11 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
     const { number, message } = req.body
     const client = clients.get(userId)
 
+    // Ensure user can only access their own session
     if (!client) {
       return res.status(404).json({
         status: false,
-        message: "Session not found",
+        message: "Session not found. You can only send messages from your own session.",
       })
     }
 
@@ -1036,21 +748,14 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
     if (!session || !session.connected) {
       return res.status(400).json({
         status: false,
-        message: "WhatsApp not connected",
+        message: "Your WhatsApp session is not connected. Please scan the QR code first.",
       })
     }
 
-    if (!number) {
+    if (!number || !validatePhoneNumber(number)) {
       return res.status(400).json({
         status: false,
-        message: "Phone number is required",
-      })
-    }
-
-    if (!validatePhoneNumber(number)) {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid phone number format",
+        message: "Valid phone number is required",
       })
     }
 
@@ -1063,11 +768,12 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
 
     const formattedNumber = formatPhoneNumber(number)
 
-    // Send response immediately to prevent timeout
+    // Send response immediately
     res.json({
       status: true,
-      message: "Message is being sent...",
+      message: "Message is being sent from your session...",
       data: {
+        from: userId,
         to: formattedNumber,
         content: message.trim(),
         timestamp: new Date(),
@@ -1079,7 +785,7 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
     try {
       await sendWhatsAppMessage(client, userId, formattedNumber, message.trim())
 
-      // Add to message history
+      // Add to user's message history only
       const history = messageHistory.get(userId) || []
       history.push({
         type: "sent",
@@ -1090,7 +796,6 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
       })
       messageHistory.set(userId, history.slice(-100))
 
-      // Update last activity
       session.lastActivity = new Date()
       userSessions.set(userId, session)
 
@@ -1098,7 +803,6 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
     } catch (error) {
       console.error(`❌ Async message send failed for ${userId}:`, error.message)
 
-      // Add failed message to history
       const history = messageHistory.get(userId) || []
       history.push({
         type: "sent",
@@ -1114,7 +818,7 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
     console.error("Send message error:", error)
     res.status(500).json({
       status: false,
-      message: "Failed to send message",
+      message: "Failed to send message from your session",
       error: error.message,
     })
   }
@@ -1124,64 +828,9 @@ app.post("/api/sessions/:userId/messages", async (req, res) => {
  * @swagger
  * /api/sessions/{userId}/messages/media:
  *   post:
- *     summary: Send a message with media attachment
- *     description: |
- *       Send a message with media attachment (image, document, audio, video).
- *       Supports various file formats up to 50MB in size.
+ *     summary: Send a message with media attachment (user-isolated)
+ *     description: Send a message with media from your WhatsApp session only
  *     tags: [Messages]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID of the session
- *         example: "user123"
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               number:
- *                 type: string
- *                 description: WhatsApp number with country code
- *                 example: "628123456789"
- *               message:
- *                 type: string
- *                 description: Optional caption for the media
- *                 example: "Check out this image!"
- *               file:
- *                 type: string
- *                 format: binary
- *                 description: Media file to send
- *             required:
- *               - number
- *           encoding:
- *             file:
- *               contentType: image/*, video/*, audio/*, application/pdf, application/msword, text/*
- *     responses:
- *       200:
- *         description: Media message sent successfully (or being sent)
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ApiResponse'
- *             example:
- *               status: true
- *               message: "Media is being sent..."
- *               data:
- *                 to: "628123456789@c.us"
- *                 hasMedia: true
- *                 timestamp: "2024-01-01T10:30:00Z"
- *                 sending: true
- *       400:
- *         $ref: '#/components/responses/BadRequest'
- *       404:
- *         $ref: '#/components/responses/NotFound'
- *       500:
- *         $ref: '#/components/responses/InternalError'
  */
 app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (req, res) => {
   try {
@@ -1189,10 +838,11 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
     const { number, message } = req.body
     const client = clients.get(userId)
 
+    // Ensure user can only access their own session
     if (!client) {
       return res.status(404).json({
         status: false,
-        message: "Session not found",
+        message: "Session not found. You can only send messages from your own session.",
       })
     }
 
@@ -1200,21 +850,14 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
     if (!session || !session.connected) {
       return res.status(400).json({
         status: false,
-        message: "WhatsApp not connected",
+        message: "Your WhatsApp session is not connected. Please scan the QR code first.",
       })
     }
 
-    if (!number) {
+    if (!number || !validatePhoneNumber(number)) {
       return res.status(400).json({
         status: false,
-        message: "Phone number is required",
-      })
-    }
-
-    if (!validatePhoneNumber(number)) {
-      return res.status(400).json({
-        status: false,
-        message: "Invalid phone number format",
+        message: "Valid phone number is required",
       })
     }
 
@@ -1227,11 +870,12 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
       })
     }
 
-    // Send response immediately to prevent timeout
+    // Send response immediately
     res.json({
       status: true,
-      message: req.file ? "Media is being sent..." : "Message is being sent...",
+      message: req.file ? "Media is being sent from your session..." : "Message is being sent from your session...",
       data: {
+        from: userId,
         to: formattedNumber,
         hasMedia: !!req.file,
         timestamp: new Date(),
@@ -1252,7 +896,7 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
           }
         }, 5000)
 
-        // Add to message history
+        // Add to user's message history only
         const history = messageHistory.get(userId) || []
         history.push({
           type: "sent",
@@ -1279,7 +923,6 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
         messageHistory.set(userId, history.slice(-100))
       }
 
-      // Update last activity
       session.lastActivity = new Date()
       userSessions.set(userId, session)
 
@@ -1287,12 +930,10 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
     } catch (error) {
       console.error(`❌ Async media/message send failed for ${userId}:`, error.message)
 
-      // Clean up file on error
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
       }
 
-      // Add failed message to history
       const history = messageHistory.get(userId) || []
       history.push({
         type: "sent",
@@ -1314,7 +955,7 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
 
     res.status(500).json({
       status: false,
-      message: "Failed to send message",
+      message: "Failed to send message from your session",
       error: error.message,
     })
   }
@@ -1324,64 +965,15 @@ app.post("/api/sessions/:userId/messages/media", upload.single("file"), async (r
  * @swagger
  * /api/sessions/{userId}/history:
  *   get:
- *     summary: Get message history for a session
- *     description: Retrieve the message history (sent and received) for a specific session
+ *     summary: Get message history for your session only
+ *     description: Retrieve your message history (sent and received) - isolated per user
  *     tags: [Messages]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID of the session
- *         example: "user123"
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 50
- *           minimum: 1
- *           maximum: 100
- *         description: Number of messages to return
- *         example: 20
- *     responses:
- *       200:
- *         description: Message history retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     messages:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/MessageHistory'
- *                     total:
- *                       type: integer
- *                       description: Total number of messages in history
- *             example:
- *               status: true
- *               data:
- *                 messages:
- *                   - type: "sent"
- *                     to: "628123456789@c.us"
- *                     body: "Hello!"
- *                     hasMedia: false
- *                     timestamp: "2024-01-01T10:30:00Z"
- *                     status: "sent"
- *                 total: 1
- *       404:
- *         $ref: '#/components/responses/NotFound'
  */
 app.get("/api/sessions/:userId/history", (req, res) => {
   const { userId } = req.params
   const limit = Number.parseInt(req.query.limit) || 50
 
+  // Only return history for the specific user - no cross-user access
   const history = messageHistory.get(userId) || []
   const limitedHistory = history.slice(-limit).reverse()
 
@@ -1390,6 +982,7 @@ app.get("/api/sessions/:userId/history", (req, res) => {
     data: {
       messages: limitedHistory,
       total: history.length,
+      note: "This is your personal message history only",
     },
   })
 })
@@ -1398,59 +991,16 @@ app.get("/api/sessions/:userId/history", (req, res) => {
  * @swagger
  * /api/sessions/{userId}/pending:
  *   get:
- *     summary: Get pending messages status
- *     description: Check the status of messages that are currently being processed
+ *     summary: Get pending messages status for your session
+ *     description: Check the status of your messages that are currently being processed
  *     tags: [Messages]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID of the session
- *         example: "user123"
- *     responses:
- *       200:
- *         description: Pending messages information
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     pending:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           key:
- *                             type: string
- *                           status:
- *                             type: string
- *                             enum: [pending, sent, failed]
- *                           timestamp:
- *                             type: string
- *                             format: date-time
- *                           to:
- *                             type: string
- *                           content:
- *                             type: string
- *                     count:
- *                       type: integer
- *             example:
- *               status: true
- *               data:
- *                 pending: []
- *                 count: 0
  */
 app.get("/api/sessions/:userId/pending", (req, res) => {
   const { userId } = req.params
+
+  // Only return pending messages for the specific user
   const pending = Array.from(pendingMessages.entries())
-    .filter(([key]) => key.startsWith(userId))
+    .filter(([key, data]) => key.startsWith(userId) && data.userId === userId)
     .map(([key, data]) => ({ key, ...data }))
 
   res.json({
@@ -1458,6 +1008,7 @@ app.get("/api/sessions/:userId/pending", (req, res) => {
     data: {
       pending: pending,
       count: pending.length,
+      note: "These are your pending messages only",
     },
   })
 })
@@ -1466,33 +1017,9 @@ app.get("/api/sessions/:userId/pending", (req, res) => {
  * @swagger
  * /api/sessions/{userId}:
  *   delete:
- *     summary: Logout and destroy a session
- *     description: |
- *       Logout from WhatsApp and completely destroy the session.
- *       This will remove all session data and disconnect from WhatsApp.
+ *     summary: Logout and destroy your session
+ *     description: Logout from WhatsApp and destroy your session only
  *     tags: [Sessions]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID of the session to destroy
- *         example: "user123"
- *     responses:
- *       200:
- *         description: Session destroyed successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ApiResponse'
- *             example:
- *               status: true
- *               message: "Session destroyed successfully"
- *       404:
- *         $ref: '#/components/responses/NotFound'
- *       500:
- *         $ref: '#/components/responses/InternalError'
  */
 app.delete("/api/sessions/:userId", async (req, res) => {
   try {
@@ -1502,27 +1029,34 @@ app.delete("/api/sessions/:userId", async (req, res) => {
     if (!client) {
       return res.status(404).json({
         status: false,
-        message: "Session not found",
+        message: "Session not found. You can only destroy your own session.",
       })
     }
 
     await client.logout()
     await client.destroy()
 
+    // Clean up all user-specific data
     clients.delete(userId)
     userSessions.delete(userId)
     qrCodes.delete(userId)
     messageHistory.delete(userId)
 
+    // Clean up user's pending messages
+    const userPendingKeys = Array.from(pendingMessages.keys()).filter((key) => key.startsWith(userId))
+    userPendingKeys.forEach((key) => pendingMessages.delete(key))
+
+    console.log(`🗑️ Session destroyed for user: ${userId}`)
+
     res.json({
       status: true,
-      message: "Session destroyed successfully",
+      message: "Your session has been destroyed successfully",
     })
   } catch (error) {
     console.error("Logout error:", error)
     res.status(500).json({
       status: false,
-      message: "Failed to destroy session",
+      message: "Failed to destroy your session",
       error: error.message,
     })
   }
@@ -1533,21 +1067,8 @@ app.delete("/api/sessions/:userId", async (req, res) => {
  * /api/health:
  *   get:
  *     summary: System health check
- *     description: Get system health information including active sessions and uptime
+ *     description: Get system health information
  *     tags: [System]
- *     responses:
- *       200:
- *         description: System health information
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/HealthResponse'
- *             example:
- *               status: "healthy"
- *               timestamp: "2024-01-01T10:30:00Z"
- *               activeSessions: 2
- *               uptime: 3600
- *               pendingMessages: 0
  */
 app.get("/api/health", (req, res) => {
   res.json({
@@ -1556,24 +1077,9 @@ app.get("/api/health", (req, res) => {
     activeSessions: clients.size,
     uptime: process.uptime(),
     pendingMessages: pendingMessages.size,
+    note: "Each session is isolated - 1 person = 1 account",
   })
 })
-
-/**
- * @swagger
- * /api-docs.json:
- *   get:
- *     summary: Get OpenAPI specification
- *     description: Returns the raw OpenAPI specification in JSON format
- *     tags: [System]
- *     responses:
- *       200:
- *         description: OpenAPI specification
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- */
 
 // Enhanced error handling middleware
 app.use((error, req, res, next) => {
@@ -1631,4 +1137,5 @@ app.listen(PORT, () => {
   console.log(`🚀 WhatsApp Multi-User Bot Server running on port ${PORT}`)
   console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`)
   console.log(`🌐 Web Interface: http://localhost:${PORT}`)
+  console.log(`👤 Session Isolation: 1 person = 1 account (users cannot access other sessions)`)
 })

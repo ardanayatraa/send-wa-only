@@ -11,7 +11,7 @@ class WhatsAppBotApp {
       totalSessions: 0,
       totalMessages: 0,
       uptime: 0,
-      systemStatus: "Healthy",
+      systemStatus: "Isolated",
     }
 
     this.init()
@@ -155,9 +155,9 @@ class WhatsAppBotApp {
       if (data.status) {
         this.currentUserId = userId.trim()
         this.saveToStorage()
-        this.showToast(data.message, "success")
+        this.showToast("Your personal session created successfully!", "success")
         this.updateUserInfo()
-        this.addActivity(`Session created for ${userId}`)
+        this.addActivity(`Personal session created for ${userId}`)
 
         // Clear input fields
         document.getElementById("quickUserId").value = ""
@@ -170,7 +170,11 @@ class WhatsAppBotApp {
         // Update sessions list
         this.loadSessions()
       } else {
-        this.showToast(data.message, "error")
+        if (response.status === 409) {
+          this.showToast("You already have a session. Only one session per person is allowed.", "warning")
+        } else {
+          this.showToast(data.message, "error")
+        }
       }
     } catch (error) {
       console.error("Create session error:", error)
@@ -195,7 +199,7 @@ class WhatsAppBotApp {
 
         // Only show success toast once
         if (!this.connectionNotified) {
-          this.showToast("WhatsApp connected successfully!", "success")
+          this.showToast("Your WhatsApp connected successfully!", "success")
           this.addActivity(`${this.currentUserId} connected to WhatsApp`)
           this.connectionNotified = true
         }
@@ -229,7 +233,7 @@ class WhatsAppBotApp {
         document.getElementById("qrContainer").innerHTML = `
           <img src="${data.qr}" alt="QR Code" style="max-width: 300px; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.1);" />
         `
-        document.getElementById("qrStatus").textContent = "Scan QR code with WhatsApp"
+        document.getElementById("qrStatus").textContent = "Scan QR code with your WhatsApp"
 
         setTimeout(() => {
           this.isGettingQR = false
@@ -239,7 +243,7 @@ class WhatsAppBotApp {
         this.hideQRSection()
         this.showMessageInterface()
         if (!this.connectionNotified) {
-          this.showToast("WhatsApp connected!", "success")
+          this.showToast("Your WhatsApp connected!", "success")
           this.connectionNotified = true
         }
         this.isGettingQR = false
@@ -247,7 +251,7 @@ class WhatsAppBotApp {
         document.getElementById("qrContainer").innerHTML = `
           <div class="loading-spinner">
             <i class="fas fa-spinner fa-spin"></i>
-            <p>Generating QR Code...</p>
+            <p>Generating your personal QR Code...</p>
           </div>
         `
         setTimeout(() => {
@@ -313,14 +317,14 @@ class WhatsAppBotApp {
       if (data.status) {
         // Show appropriate message based on whether it's being sent or already sent
         if (data.data && data.data.sending) {
-          this.showToast("Message is being sent in background...", "info")
+          this.showToast("Message is being sent from your session...", "info")
         } else {
-          this.showToast("Message sent successfully!", "success")
+          this.showToast("Message sent successfully from your session!", "success")
         }
 
         this.addToMessageHistory(phoneNumber, messageText, file)
         this.clearMessageForm()
-        this.addActivity(`Message sent to ${phoneNumber}`)
+        this.addActivity(`Message sent to ${phoneNumber} from your session`)
         this.updateStats()
 
         // Check message status after a delay
@@ -332,7 +336,7 @@ class WhatsAppBotApp {
       }
     } catch (error) {
       console.error("Send message error:", error)
-      this.showToast("Failed to send message: " + error.message, "error")
+      this.showToast("Failed to send message from your session: " + error.message, "error")
     } finally {
       this.showLoading(false)
     }
@@ -409,14 +413,14 @@ class WhatsAppBotApp {
         this.updateUserInfo()
         this.hideQRSection()
         this.hideMessageInterface()
-        this.showToast("Logged out successfully", "success")
+        this.showToast("Logged out successfully from your session", "success")
         this.loadSessions()
       } else {
         this.showToast(data.message, "error")
       }
     } catch (error) {
       console.error("Logout error:", error)
-      this.showToast("Failed to logout: " + error.message, "error")
+      this.showToast("Failed to logout from your session: " + error.message, "error")
     } finally {
       this.showLoading(false)
     }
@@ -428,14 +432,18 @@ class WhatsAppBotApp {
     if (sessions.length === 0) {
       sessionsList.innerHTML = `
         <div class="empty-state">
-          <i class="fas fa-users"></i>
-          <p>No active sessions</p>
+          <i class="fas fa-user"></i>
+          <p>No active session</p>
+          <small>Create your personal session to get started</small>
         </div>
       `
       return
     }
 
-    sessionsList.innerHTML = sessions
+    // Only show sessions that belong to the current user
+    const userSessions = sessions.filter((session) => !this.currentUserId || session.userId === this.currentUserId)
+
+    sessionsList.innerHTML = userSessions
       .map(
         (session) => `
       <div class="session-item">
@@ -444,7 +452,7 @@ class WhatsAppBotApp {
             ${session.userId.charAt(0).toUpperCase()}
           </div>
           <div class="session-details">
-            <h4>${session.userId}</h4>
+            <h4>${session.userId} ${session.userId === this.currentUserId ? "(Your Session)" : ""}</h4>
             <p>Created: ${new Date(session.createdAt).toLocaleString()}</p>
           </div>
         </div>
@@ -456,10 +464,10 @@ class WhatsAppBotApp {
           ${
             session.userId === this.currentUserId
               ? `<button class="btn btn-danger btn-sm" onclick="app.logout()">
-              <i class="fas fa-sign-out-alt"></i>
+              <i class="fas fa-sign-out-alt"></i> Logout
             </button>`
-              : `<button class="btn btn-primary btn-sm" onclick="app.switchSession('${session.userId}')">
-              <i class="fas fa-exchange-alt"></i>
+              : `<button class="btn btn-primary btn-sm" onclick="app.switchSession('${session.userId}')" disabled>
+              <i class="fas fa-ban"></i> Private
             </button>`
           }
         </div>
@@ -477,6 +485,7 @@ class WhatsAppBotApp {
         <div class="empty-state">
           <i class="fas fa-comments"></i>
           <p>No messages found</p>
+          <small>Your personal message history will appear here</small>
         </div>
       `
       return
@@ -518,17 +527,29 @@ class WhatsAppBotApp {
 
   updateHistorySessionSelect(sessions) {
     const select = document.getElementById("historySession")
+
+    // Only show the current user's session
+    const userSessions = sessions.filter((session) => !this.currentUserId || session.userId === this.currentUserId)
+
     select.innerHTML =
-      '<option value="">Select Session</option>' +
-      sessions.map((session) => `<option value="${session.userId}">${session.userId}</option>`).join("")
+      '<option value="">Select Your Session</option>' +
+      userSessions
+        .map((session) => `<option value="${session.userId}">${session.userId} (Your Session)</option>`)
+        .join("")
   }
 
   switchSession(userId) {
+    // Prevent switching to other users' sessions
+    if (userId !== this.currentUserId) {
+      this.showToast("You can only access your own session", "error")
+      return
+    }
+
     this.currentUserId = userId
     this.saveToStorage()
     this.updateUserInfo()
     this.checkConnection()
-    this.showToast(`Switched to session: ${userId}`, "success")
+    this.showToast(`Switched to your session: ${userId}`, "success")
   }
 
   handleFileSelect(event) {
@@ -607,7 +628,7 @@ class WhatsAppBotApp {
   showMessageInterface() {
     document.getElementById("messageInterface").style.display = "block"
     document.getElementById("noSessionMessage").style.display = "none"
-    document.getElementById("currentSessionId").textContent = this.currentUserId
+    document.getElementById("currentSessionId").textContent = `${this.currentUserId} (Your Session)`
   }
 
   hideMessageInterface() {
@@ -620,7 +641,7 @@ class WhatsAppBotApp {
     const logoutBtn = document.getElementById("logoutBtn")
 
     if (this.currentUserId) {
-      userSpan.textContent = this.currentUserId
+      userSpan.textContent = `${this.currentUserId} (Your Session)`
       logoutBtn.style.display = "block"
     } else {
       userSpan.textContent = "No Active Session"
@@ -656,9 +677,19 @@ class WhatsAppBotApp {
           ? "exclamation-circle"
           : type === "info"
             ? "info-circle"
-            : "info-circle"
+            : type === "warning"
+              ? "exclamation-triangle"
+              : "info-circle"
     const iconColor =
-      type === "success" ? "#27ae60" : type === "error" ? "#e74c3c" : type === "info" ? "#3498db" : "#3498db"
+      type === "success"
+        ? "#27ae60"
+        : type === "error"
+          ? "#e74c3c"
+          : type === "info"
+            ? "#3498db"
+            : type === "warning"
+              ? "#f39c12"
+              : "#3498db"
 
     toast.innerHTML = `
       <div class="toast-content">
@@ -716,7 +747,7 @@ class WhatsAppBotApp {
       const data = await response.json()
 
       this.stats.uptime = data.uptime
-      this.stats.systemStatus = data.status === "healthy" ? "Healthy" : "Issues"
+      this.stats.systemStatus = data.status === "healthy" ? "Isolated" : "Issues"
       this.stats.totalSessions = data.activeSessions || 0
 
       this.updateStatsDisplay()
@@ -726,7 +757,7 @@ class WhatsAppBotApp {
   }
 
   updateStatsDisplay() {
-    document.getElementById("totalSessions").textContent = this.stats.totalSessions
+    document.getElementById("totalSessions").textContent = this.currentUserId ? "1" : "0"
     document.getElementById("totalMessages").textContent = this.stats.totalMessages
     document.getElementById("systemStatus").textContent = this.stats.systemStatus
 
@@ -824,6 +855,10 @@ style.textContent = `
     border-left: 4px solid #3498db;
   }
   
+  .toast.toast-warning {
+    border-left: 4px solid #f39c12;
+  }
+  
   .message-status {
     font-size: 0.7rem;
     padding: 2px 6px;
@@ -852,6 +887,41 @@ style.textContent = `
     font-size: 0.8rem;
     color: #e74c3c;
     font-style: italic;
+  }
+  
+  .privacy-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .privacy-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: rgba(37, 211, 102, 0.1);
+    border-radius: 8px;
+    border-left: 3px solid var(--primary-color);
+  }
+  
+  .privacy-item i {
+    color: var(--primary-color);
+    width: 20px;
+  }
+  
+  .privacy-notice {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: rgba(37, 211, 102, 0.1);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .privacy-notice i {
+    color: var(--primary-color);
   }
   
   @keyframes slideInRight {
