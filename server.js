@@ -12,7 +12,12 @@ const app = express()
 
 // Middleware
 app.use(express.json())
-app.use(cors())
+app.use(cors({
+  origin: 'https://wa.noonight.online',
+  methods: ['GET', 'POST', 'DELETE'],
+  credentials: true
+}))
+
 app.use(express.static("public"))
 
 // Swagger configuration - ENHANCED
